@@ -182,7 +182,7 @@ class Model(nn.Module):
         return dec_out
 
     def classification(self, x_enc, x_mark_enc):
-        # Normalization from Non-stationary Transformer
+        # 非平稳变换器的归一化
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(
