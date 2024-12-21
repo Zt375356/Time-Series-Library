@@ -24,7 +24,7 @@ if __name__ == '__main__':
                         help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     parser.add_argument('--model_id', type=str, required=True, default='Handwriting', help='model id')
-    parser.add_argument('--model', type=str, required=True, default='PatchTST',
+    parser.add_argument('--model', type=str, required=True, default='TimesNet',
                         help='model name, options: [Autoformer, Transformer, TimesNet]')
 
     # data loader
