@@ -141,15 +141,15 @@ if __name__ == '__main__':
     args.use_gpu = True if args.use_gpu else False
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))
-    elif args.use_gpu and torch.backends.mps.is_available():
-        args.device = torch.device('mps')
+    # elif args.use_gpu and torch.backends.mps.is_available():
+    #     args.device = torch.device('mps')
     else:
         args.use_gpu = False
         args.device = torch.device('cpu')
 
     print('GPU is available: ')
     print("cuda", torch.cuda.is_available())
-    print("mps", torch.backends.mps.is_available())
+    # print("mps", torch.backends.mps.is_available())
 
     if args.use_gpu and args.use_multi_gpu:
         args.devices = args.devices.replace(' ', '')
