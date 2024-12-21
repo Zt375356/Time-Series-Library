@@ -34,36 +34,50 @@ class TimesBlock(nn.Module):
         )
 
     def forward(self, x):
+        # 获取输入数据的形状
         B, T, N = x.size()
+        # 使用FFT计算周期和对应的权重
         period_list, period_weight = FFT_for_Period(x, self.k)
 
+        # 初始化结果列表
         res = []
+        # 遍历每个周期
         for i in range(self.k):
             period = period_list[i]
-            # padding
+            # 检查是否需要padding
             if (self.seq_len + self.pred_len) % period != 0:
+                # 计算需要的padding长度
                 length = (
                                  ((self.seq_len + self.pred_len) // period) + 1) * period
+                # 创建padding张量
                 padding = torch.zeros([x.shape[0], (length - (self.seq_len + self.pred_len)), x.shape[2]]).to(x.device)
+                # 将输入数据与padding张量连接
                 out = torch.cat([x, padding], dim=1)
             else:
+                # 如果不需要padding，则直接使用输入数据
                 length = (self.seq_len + self.pred_len)
                 out = x
-            # reshape
+            # 重塑数据以适应2D卷积
             out = out.reshape(B, length // period, period,
                               N).permute(0, 3, 1, 2).contiguous()
-            # 2D conv: from 1d Variation to 2d Variation
+            # 应用2D卷积，转换1D变化为2D变化
             out = self.conv(out)
-            # reshape back
+            # 将数据重塑回原始形状
             out = out.permute(0, 2, 3, 1).reshape(B, -1, N)
+            # 只保留需要的长度
             res.append(out[:, :(self.seq_len + self.pred_len), :])
+        # 将所有结果堆叠起来
         res = torch.stack(res, dim=-1)
-        # adaptive aggregation
+        # 适应性聚合
+        # 对周期权重进行softmax归一化
         period_weight = F.softmax(period_weight, dim=1)
+        # 将权重重塑以匹配结果的形状
         period_weight = period_weight.unsqueeze(
             1).unsqueeze(1).repeat(1, T, N, 1)
+        # 根据权重对结果进行加权求和
         res = torch.sum(res * period_weight, -1)
-        # residual connection
+        # 残差连接
+        # 将结果与原始输入数据相加
         res = res + x
         return res
 
@@ -192,7 +206,7 @@ class Model(nn.Module):
         output = self.act(enc_out)
         output = self.dropout(output)
         # zero-out padding embeddings
-        output = output * x_mark_enc.unsqueeze(-1)
+        # output = output * x_mark_enc.unsqueeze(-1)
         # (batch_size, seq_length * d_model)
         output = output.reshape(output.shape[0], -1)
         output = self.projection(output)  # (batch_size, num_classes)
