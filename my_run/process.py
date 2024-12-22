@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
+from sklearn.metrics import f1_score
 from utils import *
 from tqdm import tqdm
 import time
@@ -178,30 +179,35 @@ class Trainer():
                    desc="评估进度",
                    disable=not self.verbose,
                    ncols=100)
-        metrics = {'mse': 0}
+        metrics = {'acc': 0, 'F1': 0}
 
         with torch.no_grad():
             for idx, batch in enumerate(pbar):
                 data = [tensor.to(self.device) for tensor in batch]
-                mse = self.cr.compute(data)
-                if mse is not None:  # 添加判断，只有mse不为None时才进行操作
-                    metrics['mse'] -= mse
-                    pbar.set_postfix({"MSE": f"{-metrics['mse']/(idx+1):.4f}"})
+
+                seqs, target = data
+
+                output = self.model(seqs, None, None, None)
+
+                pred = output.argmax(dim=1, keepdim=True)
+                correct = pred.eq(target.view_as(pred)).sum().item()
+                acc = correct / len(data)
+                metrics['acc'] += acc
+
+                # 计算F1Score
+                pred_labels = pred.cpu().numpy().flatten()
+                target_labels = target.cpu().numpy().flatten()
+                f1 = f1_score(target_labels, pred_labels, average='macro')
+                metrics['F1'] += f1
+
+                pbar.set_postfix({"Accuracy": f"{metrics['acc']/(idx+1):.4f}", "F1 Score": f"{metrics['F1']/(idx+1):.4f}"})
 
             if idx > 0:  # 避免除数为0，只有当有数据参与循环时才进行平均计算
-                metrics['mse'] /= (idx + 1)
+                metrics['acc'] /= (idx + 1)
+                metrics['F1'] /= (idx + 1)
 
         return metrics
 
-        # with torch.no_grad():
-        #     for idx, batch in enumerate(pbar):
-        #         data = [tensor.to(self.device) for tensor in batch]
-        #         mse = self.cr.compute(data)
-        #         metrics['mse'] -= mse
-        #         pbar.set_postfix({"MSE": f"{-metrics['mse']/(idx+1):.4f}"})
-                
-        # metrics['mse'] /= (idx + 1)
-        # return metrics
 
     def print_process(self, *x):
         if self.verbose:

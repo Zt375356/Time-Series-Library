@@ -64,10 +64,22 @@ def main():
     print("训练器初始化完成!")
     print("="*50)
 
-    # 开始训练
-    print("开始训练模型...")
-    trainer.train()
+    # 设置训练模式
+    if args.is_training:
+        # 开始训练
+        print("开始训练模型...")
+        trainer.train()
+    else:
+        # 加载最佳模型
+        print("正在加载最佳模型...")
+        model.load_state_dict(torch.load(args.save_path + '/model.pkl'))
+        print("最佳模型加载完成!")
+        print("="*50)
 
+        # 开始测试
+        print("开始测试模型...")
+        trainer.eval_model_vqvae()
+        print("模型测试完成!")
 
 if __name__ == '__main__':
     main()
