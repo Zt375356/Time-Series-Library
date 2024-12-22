@@ -3,6 +3,7 @@ from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from utils import *
 from tqdm import tqdm
+import time
 
 class LossCalculator:
     def __init__(self, model, latent_loss_weight=0.25):
@@ -11,6 +12,72 @@ class LossCalculator:
         self.mse = nn.MSELoss()
 
     def compute(self, batch):
+        """
+        计算给定批次数据的交叉熵损失。
+
+        参数:
+        - batch: 一个包含输入序列和对应标签的批次数据，期望是可解包的格式（如元组、列表等），
+                其中第一个元素是输入序列，第二个元素是标签。
+
+        返回:
+        - loss: 计算得到的交叉熵损失值，如果出现异常情况则返回None。
+        """
+        # 检查batch是否可解包为期望的两个元素（输入序列和标签）
+        if not isinstance(batch, (tuple, list)) or len(batch)!= 2:
+            print("Error: batch should be a tuple or list with exactly two elements.")
+            return None
+
+        seqs, labels = batch
+        # 检查输入序列seqs是否是张量类型，若不是则尝试转换
+        if not isinstance(seqs, torch.Tensor):
+            try:
+                seqs = torch.tensor(seqs)
+            except:
+                print("Error: Failed to convert input sequences to tensor.")
+                return None
+
+        # 检查标签labels是否是张量类型，若不是则尝试转换
+        if not isinstance(labels, torch.Tensor):
+            try:
+                labels = torch.tensor(labels)
+            except:
+                print("Error: Failed to convert labels to tensor.")
+                return None
+
+        # 通过模型获取输出
+        out = self.model(seqs, None, None, None)
+        # 检查模型输出out是否是张量类型
+        if not isinstance(out, torch.Tensor):
+            print("Error: Model output is not a tensor.")
+            return None
+
+        # 检查模型输出和标签的维度情况，确保它们符合交叉熵损失计算的要求
+        if out.dim() < 2:
+            print("Error: Model output should have at least two dimensions for cross-entropy loss calculation.")
+            return None
+        if labels.dim() == 0:
+            print("Error: Labels should have at least one dimension.")
+            return None
+
+        # 获取输出的批量大小（假设输出维度格式为（批量大小，类别数等其他维度））
+        out_batch_size = out.shape[0]
+        # 获取标签的批量大小
+        labels_batch_size = labels.shape[0]
+        # 检查批量大小是否匹配
+        if out_batch_size!= labels_batch_size:
+            print(f"Error: Input batch_size ({out_batch_size}) does not match target batch_size ({labels_batch_size}).")
+            return None
+
+        try:
+            # 计算交叉熵损失
+            loss = nn.CrossEntropyLoss()(out, labels.long().squeeze())
+        except Exception as e:
+            print(f"Error occurred while calculating cross-entropy loss: {str(e)}")
+            return None
+
+        return loss
+    
+    def compute2(self, batch):
         seqs = batch
         out, latent_loss, _ = self.model(seqs)
         recon_loss = self.mse(out, seqs)
@@ -31,8 +98,6 @@ class Trainer():
         self.lr_decay = args.lr_decay_rate
         self.lr_decay_steps = args.lr_decay_steps
         self.weight_decay = args.weight_decay
-        self.model_name = self.model.get_name()
-        print(f"模型名称: {self.model_name}")
 
         self.cr = LossCalculator(self.model)
 
@@ -74,7 +139,7 @@ class Trainer():
         loss_sum = 0
         for idx, batch in enumerate(pbar):
             self.optimizer.zero_grad()
-            data = batch[0].to(self.device)
+            data = [tensor.to(self.device) for tensor in batch]
             loss = self.cr.compute(data)
             loss_sum += loss.item()
 
@@ -117,13 +182,26 @@ class Trainer():
 
         with torch.no_grad():
             for idx, batch in enumerate(pbar):
-                data = batch[0].to(self.device)
+                data = [tensor.to(self.device) for tensor in batch]
                 mse = self.cr.compute(data)
-                metrics['mse'] -= mse
-                pbar.set_postfix({"MSE": f"{-metrics['mse']/(idx+1):.4f}"})
-                
-        metrics['mse'] /= (idx + 1)
+                if mse is not None:  # 添加判断，只有mse不为None时才进行操作
+                    metrics['mse'] -= mse
+                    pbar.set_postfix({"MSE": f"{-metrics['mse']/(idx+1):.4f}"})
+
+            if idx > 0:  # 避免除数为0，只有当有数据参与循环时才进行平均计算
+                metrics['mse'] /= (idx + 1)
+
         return metrics
+
+        # with torch.no_grad():
+        #     for idx, batch in enumerate(pbar):
+        #         data = [tensor.to(self.device) for tensor in batch]
+        #         mse = self.cr.compute(data)
+        #         metrics['mse'] -= mse
+        #         pbar.set_postfix({"MSE": f"{-metrics['mse']/(idx+1):.4f}"})
+                
+        # metrics['mse'] /= (idx + 1)
+        # return metrics
 
     def print_process(self, *x):
         if self.verbose:

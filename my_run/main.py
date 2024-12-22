@@ -3,15 +3,19 @@ from torch import nn
 from torch.nn import functional as F
 import os
 import numpy as np
-from args import args
-# import dataset_loader
 
-from models import TimesNet
+from args import args
+import dataset_loader
+from process import Trainer
+
 from utils import *
 import math
 import tqdm
 import random
 
+import sys
+sys.path.append("c:\\Users\\W\\Desktop\\Time-Series-Library")  # 将高一级目录添加到模块搜索路径
+import models.TimesNet as TimesNet 
 
 def seed_everything(seed):
     random.seed(seed)
@@ -38,8 +42,10 @@ def main():
 
     print(f"数据集名称: {args.dataset_name}")
     args.seq_len = seq_len
+    args.enc_in = num_channel
     args.pred_len = 0 # for classification
     args.num_class = num_classes
+    args.label_len = 1
     print(f"数据形状: ({seq_len},{num_channel})")
 
     print("数据集加载完成!")
@@ -47,7 +53,7 @@ def main():
 
     # 初始化模型
     print("正在初始化模型...")
-    model = TimesNet(args).to(args.device)  # 将模型移动到指定设备
+    model = TimesNet.Model(args).to(args.device)  # 将模型移动到指定设备
 
     print("模型初始化完成!")
     print("="*50)
