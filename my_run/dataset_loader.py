@@ -240,6 +240,58 @@ class MultiDataset(Dataset):
         return input_ids, attn_masks
 
 
+class Normalizer(object):
+    """
+    Normalizes dataframe across ALL contained rows (time steps). Different from per-sample normalization.
+    """
+
+    def __init__(self, norm_type='standardization', mean=None, std=None, min_val=None, max_val=None):
+        """
+        Args:
+            norm_type: choose from:
+                "standardization", "minmax": normalizes dataframe across ALL contained rows (time steps)
+                "per_sample_std", "per_sample_minmax": normalizes each sample separately (i.e. across only its own rows)
+            mean, std, min_val, max_val: optional (num_feat,) Series of pre-computed values
+        """
+
+        self.norm_type = norm_type
+        self.mean = mean
+        self.std = std
+        self.min_val = min_val
+        self.max_val = max_val
+
+    def normalize(self, df):
+        """
+        Args:
+            df: input dataframe
+        Returns:
+            df: normalized dataframe
+        """
+        if self.norm_type == "standardization":
+            if self.mean is None:
+                self.mean = df.mean()
+                self.std = df.std()
+            return (df - self.mean) / (self.std + np.finfo(float).eps)
+
+        elif self.norm_type == "minmax":
+            if self.max_val is None:
+                self.max_val = df.max()
+                self.min_val = df.min()
+            return (df - self.min_val) / (self.max_val - self.min_val + np.finfo(float).eps)
+
+        elif self.norm_type == "per_sample_std":
+            grouped = df.groupby(by=df.index)
+            return (df - grouped.transform('mean')) / grouped.transform('std')
+
+        elif self.norm_type == "per_sample_minmax":
+            grouped = df.groupby(by=df.index)
+            min_vals = grouped.transform('min')
+            return (df - min_vals) / (grouped.transform('max') - min_vals + np.finfo(float).eps)
+
+        else:
+            raise (NameError(f'Normalize method "{self.norm_type}" not implemented'))
+
+
 # 定义读取数据集的函数
 def read_dataset(file_path, delimiter):
     """
@@ -323,16 +375,21 @@ def HAR_dataset_loader(batch_size=128, sequence_len=128, id=1, use6dimension=Fal
 
         X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.5, random_state=42, shuffle=True)
 
+        # 进行norm化
+        normalizer = Normalizer()
+        X_train = normalizer.normalize(X_train)
+        X_test = normalizer.normalize(X_test)
+        X_val = normalizer.normalize(X_val)
+
         if use6dimension:
             train = torch.utils.data.TensorDataset(X_train[:,:,:6], y_train)
             test = torch.utils.data.TensorDataset(X_test[:,:,:6], y_test)
         else:
             train = torch.utils.data.TensorDataset(X_train, y_train)
             test = torch.utils.data.TensorDataset(X_test, y_test)
-
         # data loader
         val = torch.utils.data.TensorDataset(X_val, y_val)
-        val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size, shuffle=False)  # 验证集通常不打乱数据
+        val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size, shuffle=False) 
         train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True)
         test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size, shuffle=False)
         return train_loader, val_loader, test_loader

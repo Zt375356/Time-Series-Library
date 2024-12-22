@@ -224,6 +224,21 @@ class Model(nn.Module):
             dec_out = self.anomaly_detection(x_enc)
             return dec_out  # [B, L, D]
         if self.task_name == 'classification':
+
+            # 实例归一化 
+            # 调整数据维度为[Batchsize, channel, seq_len]，以符合InstanceNorm1d的输入格式
+            input_data_transposed = x_enc.transpose(1, 2).contiguous()
+
+            # 创建InstanceNorm1d层，这里num_features设置为对应要归一化的维度的大小，也就是seq_len
+            instance_norm_layer = nn.InstanceNorm1d(num_features=x_enc.size(2))
+
+            # 进行实例归一化
+            normalized_data = instance_norm_layer(input_data_transposed)
+
+            # 如果后续还需要将数据维度恢复到原始的[Batchsize, seq_len, channel]格式
+            normalized_data = normalized_data.transpose(1, 2).contiguous()
+
+            x_enc = normalized_data
             dec_out = self.classification(x_enc, x_mark_enc)
             return dec_out  # [B, N]
         return None

@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
@@ -5,6 +6,8 @@ from sklearn.metrics import f1_score
 from utils import *
 from tqdm import tqdm
 import time
+import datetime
+import torch.utils.tensorboard as tensorboard
 
 class LossCalculator:
     def __init__(self, model, latent_loss_weight=0.25):
@@ -111,14 +114,18 @@ class Trainer():
 
         self.step = 0
         self.best_metric = -1e9
-        self.metric = 'mse'
+        self.metric = 'acc'
+        log_dir = os.path.join("./logs",datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self.writer = tensorboard.SummaryWriter(log_dir=log_dir)  # 初始化tensorboard writer
+        print(log_dir)
 
     def train(self):
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr, weight_decay=self.weight_decay)
+        # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
         self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda step: self.lr_decay ** step, verbose=self.verbose)
         
         for epoch in range(self.num_epoch):
-            loss_epoch, time_cost = self._train_one_epoch()
+            loss_epoch, time_cost = self._train_one_epoch(epoch)
             self.result_file = open(self.save_path + '/result.txt', 'a+')
             log_msg = f'Epoch [{epoch+1}/{self.num_epoch}] Loss: {loss_epoch:.4f} Time: {time_cost:.2f}s'
             print(log_msg)
@@ -126,18 +133,23 @@ class Trainer():
             self.result_file.close()
             
         print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
+        self.writer.close()
         return self.best_metric
     
-    def _train_one_epoch(self):
+    def _train_one_epoch(self, epoch):
         t0 = time.perf_counter()
         self.model.train()
         
         pbar = tqdm(self.train_loader, 
                    desc="训练进度",
                    disable=not self.verbose,
-                   ncols=100)
+                   ncols=self.num_epoch)
 
         loss_sum = 0
+        total_correct = 0
+        total_f1 = 0
+        num_samples_processed = 0  # 用于记录已处理的样本总数
+
         for idx, batch in enumerate(pbar):
             self.optimizer.zero_grad()
             data = [tensor.to(self.device) for tensor in batch]
@@ -149,6 +161,22 @@ class Trainer():
             self.optimizer.step()
 
             pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
+
+            # 计算训练过程中的准确率和F1值
+            output = self.model(data[0], None, None, None)
+            pred = output.argmax(dim=1, keepdim=True)
+            target = data[1].view(pred.shape)
+            correct = pred.eq(target).sum().item()
+            total_correct += correct
+            num_samples_processed += pred.numel()
+
+            pred_labels = pred.cpu().numpy().flatten()
+            target_labels = target.cpu().numpy().flatten()
+            try:
+                f1 = f1_score(target_labels, pred_labels, average='macro')
+                total_f1 += f1
+            except:
+                pass
 
             self.step += 1
             if self.step % self.lr_decay_steps == 0:
@@ -171,6 +199,15 @@ class Trainer():
                     self.best_metric = metric[self.metric]
                 self.model.train()
 
+        # 使用tensorboard记录train过程中的损失、准确率和F1分数 
+        self.writer.add_scalar('Loss/train', loss_sum / (idx + 1), global_step=epoch)
+        self.writer.add_scalar('Accuracy/train', total_correct / num_samples_processed, global_step=epoch)
+        self.writer.add_scalar('F1/train', total_f1 / (idx + 1), global_step=epoch)
+
+        # 使用tensorboard记录val过程中的损失、准确率和F1分数
+        self.writer.add_scalar('Accuracy/val', metric['acc'], global_step=epoch)
+        self.writer.add_scalar('F1/val', metric['F1'], global_step=epoch)
+
         return loss_sum / (idx + 1), time.perf_counter() - t0
 
     def eval_model_vqvae(self):
@@ -179,35 +216,60 @@ class Trainer():
                    desc="评估进度",
                    disable=not self.verbose,
                    ncols=100)
-        metrics = {'acc': 0, 'F1': 0}
 
         with torch.no_grad():
+            total_correct = 0
+            total_f1 = 0
+            num_samples_processed = 0  # 用于记录已处理的样本总数
+
             for idx, batch in enumerate(pbar):
                 data = [tensor.to(self.device) for tensor in batch]
+                if len(data)!= 2:
+                    print(f"Warning: Batch should contain two elements (sequences and targets), but got {len(data)}. Skipping this batch.")
+                    continue  # 如果批次数据不符合要求，跳过当前批次
 
                 seqs, target = data
+                if not isinstance(seqs, torch.Tensor) or not isinstance(target, torch.Tensor):
+                    print("Error: Input sequences or target labels are not in the correct tensor format. Skipping this batch.")
+                    continue  # 如果序列或目标不是张量类型，跳过当前批次
 
                 output = self.model(seqs, None, None, None)
+                if output.dim() < 2:
+                    print("Error: Model output should have at least two dimensions. Skipping this batch.")
+                    continue  # 如果模型输出维度不符合要求，跳过当前批次
 
                 pred = output.argmax(dim=1, keepdim=True)
-                correct = pred.eq(target.view_as(pred)).sum().item()
-                acc = correct / len(data)
-                metrics['acc'] += acc
+                # 确保pred和target的形状在比较时是兼容的
+                if pred.shape!= target.shape:
+                    target = target.view(pred.shape)
 
-                # 计算F1Score
+                correct = pred.eq(target).sum().item()
+                total_correct += correct
+                num_samples_processed += pred.numel()  # 更新已处理的样本数量
+
+                # 计算F1Score，确保数据类型转换和形状适配正确
                 pred_labels = pred.cpu().numpy().flatten()
                 target_labels = target.cpu().numpy().flatten()
-                f1 = f1_score(target_labels, pred_labels, average='macro')
-                metrics['F1'] += f1
+                if len(pred_labels)!= len(target_labels):
+                    print("Error: Predicted labels and target labels have different lengths. Skipping F1 score calculation for this batch.")
+                    continue  # 如果预测标签和目标标签长度不一致，跳过当前批次F1分数计算
 
-                pbar.set_postfix({"Accuracy": f"{metrics['acc']/(idx+1):.4f}", "F1 Score": f"{metrics['F1']/(idx+1):.4f}"})
+                try:
+                    f1 = f1_score(target_labels, pred_labels, average='macro')
+                    total_f1 += f1
+                except ValueError as e:
+                    print(f"Error calculating F1 score: {str(e)}. Skipping this batch's F1 score calculation.")
+                    continue  # 如果F1分数计算出现异常，跳过当前批次F1分数计算
 
-            if idx > 0:  # 避免除数为0，只有当有数据参与循环时才进行平均计算
-                metrics['acc'] /= (idx + 1)
-                metrics['F1'] /= (idx + 1)
+                pbar.set_postfix({"Accuracy": f"{total_correct / num_samples_processed:.4f}", "F1 Score": f"{total_f1 / (idx + 1):.4f}"})
+
+            if num_samples_processed > 0:  # 避免除数为0，只有当有数据参与循环时才进行平均计算
+                metrics = {'acc': total_correct / num_samples_processed, 'F1': total_f1 / (idx + 1)}
+            else:
+                print("Warning: No valid samples were processed. Returning default metrics values.")
+                metrics = {'acc': 0.0, 'F1': 0.0}  # 如果没有处理有效样本，返回默认的评估指标值
 
         return metrics
-
 
     def print_process(self, *x):
         if self.verbose:
