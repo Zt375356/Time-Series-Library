@@ -3,11 +3,11 @@ import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from sklearn.metrics import f1_score
-from utils import *
 from tqdm import tqdm
 import time
 import datetime
 import torch.utils.tensorboard as tensorboard
+
 
 class LossCalculator:
     def __init__(self, model, latent_loss_weight=0.25):
@@ -108,23 +108,29 @@ class Trainer():
         self.num_epoch = args.num_epoch
         self.eval_per_steps = args.eval_per_steps
         self.save_path = args.save_path
-        if self.num_epoch:
-            self.result_file = open(self.save_path + '/result.txt', 'w')
-            self.result_file.close()
+        # if self.num_epoch:
+        #     self.result_file = open(self.save_path + '/result.txt', 'w')
+        #     self.result_file.close()
 
         self.step = 0
         self.best_metric = -1e9
         self.metric = 'acc'
-        log_dir = os.path.join("./logs",datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-        self.writer = tensorboard.SummaryWriter(log_dir=log_dir)  # 初始化tensorboard writer
+        log_dir = os.path.join("./logs",self.args.dataset_name)
+        log_dir = os.path.join(log_dir,datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+        # self.writer = tensorboard.SummaryWriter(log_dir=log_dir)  # 初始化tensorboard writer
         print(log_dir)
 
     def train(self):
         # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr, weight_decay=self.weight_decay)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
-        self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda step: self.lr_decay ** step, verbose=self.verbose)
+        # self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda step: self.lr_decay ** step, verbose=self.verbose)
         
-        for epoch in range(self.num_epoch):
+        pbar = tqdm(range(self.num_epoch), 
+                   desc="训练进度",
+                   disable=False,
+                   ncols=self.num_epoch)
+
+        for epoch in pbar:
             loss_epoch, time_cost = self._train_one_epoch(epoch)
             self.result_file = open(self.save_path + '/result.txt', 'a+')
             log_msg = f'Epoch [{epoch+1}/{self.num_epoch}] Loss: {loss_epoch:.4f} Time: {time_cost:.2f}s'
@@ -133,8 +139,8 @@ class Trainer():
             self.result_file.close()
             
         print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
-        self.writer.close()
-        return self.best_metric
+        # self.writer.close()
+        return self.best_metric, loss_epoch
     
     def _train_one_epoch(self, epoch):
         t0 = time.perf_counter()
@@ -179,34 +185,35 @@ class Trainer():
                 pass
 
             self.step += 1
-            if self.step % self.lr_decay_steps == 0:
-                self.scheduler.step()
+            # if self.step % self.lr_decay_steps == 0:
+            #     self.scheduler.step()
             if self.step % self.eval_per_steps == 0:
                 metric = self.eval_model_vqvae()
-                print(f"Step {self.step}: {metric}")
-                self.result_file = open(self.save_path + '/result.txt', 'a+')
-                print(f'Step {self.step}:', file=self.result_file)
-                print(metric, file=self.result_file)
-                self.result_file.close()
+                # print(f"Step {self.step}: {metric}")
+                # self.result_file = open(self.save_path + '/result.txt', 'a+')
+                # print(f'Step {self.step}:', file=self.result_file)
+                # print(metric, file=self.result_file)
+                # self.result_file.close()
+
+                # # 使用tensorboard记录val过程中的损失、准确率和F1分数
+                # self.writer.add_scalar('Accuracy/val', metric['acc'], global_step=self.step)
+                # self.writer.add_scalar('F1/val', metric['F1'], global_step=self.step)
                 
                 if metric[self.metric] >= self.best_metric:
                     self.model.eval()
-                    torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
-                    print(f"保存最佳模型 (Step {self.step})")
-                    self.result_file = open(self.save_path + '/result.txt', 'a+')
-                    print(f'保存模型 Step {self.step}', file=self.result_file)
-                    self.result_file.close()
+                    # torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
+                    # print(f"保存最佳模型 (Step {self.step})")
+                    # self.result_file = open(self.save_path + '/result.txt', 'a+')
+                    # print(f'保存模型 Step {self.step}', file=self.result_file)
+                    # self.result_file.close()
                     self.best_metric = metric[self.metric]
                 self.model.train()
 
         # 使用tensorboard记录train过程中的损失、准确率和F1分数 
-        self.writer.add_scalar('Loss/train', loss_sum / (idx + 1), global_step=epoch)
-        self.writer.add_scalar('Accuracy/train', total_correct / num_samples_processed, global_step=epoch)
-        self.writer.add_scalar('F1/train', total_f1 / (idx + 1), global_step=epoch)
+        # self.writer.add_scalar('Loss/train', loss_sum / (idx + 1), global_step=epoch)
+        # self.writer.add_scalar('Accuracy/train', total_correct / num_samples_processed, global_step=epoch)
+        # self.writer.add_scalar('F1/train', total_f1 / (idx + 1), global_step=epoch)
 
-        # 使用tensorboard记录val过程中的损失、准确率和F1分数
-        self.writer.add_scalar('Accuracy/val', metric['acc'], global_step=epoch)
-        self.writer.add_scalar('F1/val', metric['F1'], global_step=epoch)
 
         return loss_sum / (idx + 1), time.perf_counter() - t0
 
@@ -271,6 +278,22 @@ class Trainer():
 
         return metrics
 
-    def print_process(self, *x):
-        if self.verbose:
-            print(*x)
+class RayTrainer(Trainer):
+    def __init__(self, args, model, train_loader, test_loader, verbose=False):
+        args.epoch = False
+        super().__init__(args, model, train_loader, test_loader, verbose=False)
+
+
+    def train(self):
+        pbar = tqdm(range(self.num_epoch), 
+            desc="训练进度",
+            disable=False,
+            ncols=self.num_epoch)
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
+        
+        for epoch in pbar:
+            loss_epoch, time_cost = self._train_one_epoch(epoch)
+            
+        print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
+        return self.best_metric, loss_epoch

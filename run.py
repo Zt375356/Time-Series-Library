@@ -12,7 +12,7 @@ import random
 import numpy as np
 
 if __name__ == '__main__':
-    fix_seed = 2021
+    fix_seed = 2023
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
@@ -86,7 +86,7 @@ if __name__ == '__main__':
                         help='the length of segmen-wise iteration of SegRNN')
 
     # optimization
-    parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
+    parser.add_argument('--num_workers', type=int, default=0, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=100, help='train epochs')
     parser.add_argument('--batch_size', type=int, default=16, help='batch size of train input data')
@@ -148,7 +148,8 @@ if __name__ == '__main__':
         args.device = torch.device('cpu')
 
     print('GPU is available: ')
-    print("cuda", torch.cuda.is_available())
+    # print("cuda", torch.cuda.is_available())
+    args.device = torch.device('cuda:0')
     # print("mps", torch.backends.mps.is_available())
 
     if args.use_gpu and args.use_multi_gpu:

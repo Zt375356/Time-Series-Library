@@ -15,7 +15,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
-from utils import *
 import re
 import time
 import subprocess
@@ -395,8 +394,8 @@ def HAR_dataset_loader(batch_size=128, sequence_len=128, id=1, use6dimension=Fal
         return train_loader, val_loader, test_loader
 
     elif id == 2:
-        dataset_path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\UnimibShar-main\acc_data.csv"
-        dataset_label_path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\UnimibShar-main\acc_labels.csv"
+        dataset_path = r"C:\Users\W\Desktop\导入\emergency gesture re\开源数据集\UnimibShar-main\acc_data.csv"
+        dataset_label_path = r"C:\Users\W\Desktop\导入\emergency gesture re\开源数据集\UnimibShar-main\acc_labels.csv"
         data = np.array(pd.read_csv(dataset_path))
         data_label = np.array(pd.read_csv(dataset_label_path))[:,0]-1
         data = data.reshape(data.shape[0], 3, 151).transpose(0, 2, 1)  # 453:是三个151，分别表示加速度计x，y，z的三个窗口
