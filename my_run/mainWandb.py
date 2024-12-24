@@ -13,16 +13,10 @@ import random
 
 import sys
 sys.path.append(r"c:\\Users\\W\\Desktop\\Time-Series-Library")  # 将高一级目录添加到模块搜索路径
-from process import Trainer,RayTrainer
+from process import Trainer,RayTrainer,WandBTrainer
 from models import TimesNet, PatchTST 
 
-
-import ray
-from ray import tune
-from ray.tune import CLIReporter
-from ray.tune.schedulers import ASHAScheduler
-from ray.tune.search.optuna import OptunaSearch
-
+import wandb
 
 def seed_everything(seed):
 
@@ -87,16 +81,14 @@ def main():
         print("模型测试完成!")
 
 
-def train_tune(config):
-    # 更新args字典中的值以匹配config字典中的值
-    for key, value in config.items():
-        if hasattr(args, key):
-            setattr(args, key, value)    
-    # print(args)
+def train_wandb():
+    wandb.init(project="HAR-B", entity=f"{args.model}-{args.dataset_name}")
+    for key in wandb.config.keys():
+        setattr(args, key, wandb.config[key])
 
     # 初始化模型    
     print("正在初始化模型...")
-    model = PatchTST.Model(args).to(args.device)  # 将模型移动到指定设备
+    model = TimesNet.Model(args).to(args.device)  # 将模型移动到指定设备
     print(f"模型参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
     print("模型初始化完成!")
@@ -104,9 +96,8 @@ def train_tune(config):
 
     # 初始化训练器
     print("正在初始化训练器...")
-    sys.path.append(r"c:\\Users\\W\\Desktop\\Time-Series-Library\\my_run")  # 将高一级目录添加到模块搜索路径
-    from process import RayTrainer
-    trainer = RayTrainer(args, model, train_loader, test_loader, verbose=True)
+
+    trainer = WandBTrainer(args, model, train_loader, test_loader, verbose=True)
     print("训练器初始化完成!")
     print("="*50)
 
@@ -129,12 +120,6 @@ def train_tune(config):
         print("模型测试完成!")
     
 
-def custom_trial_name_creator(trial):
-    name = "my_trial"
-    for key, value in trial.config.items():
-        name += f"_{key}_{value}"
-    return name
-
 if __name__ == '__main__':
     # 设置随机种子
     print("="*50)
@@ -152,59 +137,36 @@ if __name__ == '__main__':
 
     print("="*50)
 
-    tune.uniform
-
-    config = {
-        # "lr": tune.choice([0.0001]),
-        "e_layers": tune.choice([3, 4, 5]),
-        "d_model": tune.choice([32, 64, 128]),
-        "d_ff": tune.choice([32, 64, 128]),
-        "embed": tune.choice(['fixed', 'timeF']),
-        # "freq": tune.choice(['h', 'd']),
-        "top_k": tune.choice([3, 4, 5]),
-        # "num_kernels": tune.choice([3]),
-        "dropout": tune.choice([0.1, 0.2, 0.3]),
-        # "factor": tune.choice([1, 2, 3]),
-        # "n_heads": tune.choice([8]),
-        # "activation": tune.choice(['gelu', 'relu'])
+    # 使用wandb的sweep功能进行超参数调整
+    sweep_config = {
+        "name": f"{args.model}-{args.dataset_name}-sweep",
+        "method": "grid",
+        'metric': {
+        'goal': 'maximize', 
+        'name': 'accuracy'
+        },
+        "parameters": {
+            "e_layers": {"values": [3, 4, 5]},
+            "d_model": {"values": [32, 64, 128]},
+            "d_ff": {"values": [32, 64, 128]},
+            "embed": {"values": ['fixed', 'timeF']},
+            "top_k": {"values": [3, 4, 5]},
+            "dropout": {"values": [0.1, 0.2, 0.3]},
+        },
+        "early_terminate": {
+        "type": "hyperband",
+        }
     }
 
-    optuna_search = OptunaSearch(
-    config,
-    points_to_evaluate=[{"e_layers": 4, "d_model": 128,"d_ff":32, "top_k":3},
-                        ],
-    evaluated_rewards=[0.876],
-    metric="accuracy",
-    mode="max"
-    )
+    sweep_id = wandb.sweep(sweep_config, project=f"{args.model}-{args.dataset_name}")
+    wandb.agent(sweep_id, train_wandb)
 
-    ray.init()
-    result = tune.run(
-        train_tune,
-        search_alg=optuna_search,
-        resources_per_trial={"cpu": 8, "gpu": 1},
-        num_samples=2,
-        scheduler=ASHAScheduler(metric="accuracy", mode="max"),
-        progress_reporter=CLIReporter(metric_columns=["accuracy", "training_iteration"]),
-        checkpoint_at_end=False,
-        storage_path=r"file:///C:/Users/W/Desktop/Time-Series-Library/logs/HAR-B",
-        trial_name_creator=custom_trial_name_creator,
-        trial_dirname_creator=custom_trial_name_creator,
-    )
+    # # 找出最佳实验
+    # best_run = wandb.Api().runs(f"{args.model}-{args.dataset_name}", filters={"sweep": {"$in": [sweep_id]}}).best("accuracy")
+    # # 打印最佳实验的参数配置
+    # print("Best run config: {}".format(best_run.config))
+    # print("Best run final validation loss: {}".format(
+    #     best_run.summary["loss"]))
+    # print("Best run final validation accuracy: {}".format(
+    #     best_run.summary["accuracy"]))
 
-     # 找出最佳实验
-    best_trial = result.get_best_trial("accuracy", "max", "last")
-    # 打印最佳实验的参数配置
-    print("Best trial config: {}".format(best_trial.config))
-    print("Best trial final validation loss: {}".format(
-        best_trial.last_result["loss"]))
-    print("Best trial final validation accuracy: {}".format(
-        best_trial.last_result["accuracy"]))
-
-
-"""
-HAR-B:PatchTST-Bacth_32s
-Best trial config: {'lr': 0.0001, 'e_layers': 6, 'd_model': 128, 'd_ff': 512}
-Best trial final validation loss: 0.011632021445095023
-Best trial final validation accuracy: 0.8912489379779099
-"""
