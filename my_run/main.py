@@ -18,10 +18,10 @@ from models import TimesNet, PatchTST
 
 
 import ray
-from ray import tune,train
-from ray import tune,train
+from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.optuna import OptunaSearch
 
 
 def seed_everything(seed):
@@ -115,11 +115,6 @@ def train_tune(config):
         # 开始训练
         print("开始训练模型...")
         best_metric,current_loss = trainer.train()
-        
-        train.report(
-            mean_accuracy=best_metric,  # 这里假设你在训练过程中能计算得到current_accuracy_value这个准确率的值
-            loss=current_loss,
-        )
 
     else:
         # 加载最佳模型
@@ -134,6 +129,11 @@ def train_tune(config):
         print("模型测试完成!")
     
 
+def custom_trial_name_creator(trial):
+    name = "my_trial"
+    for key, value in trial.config.items():
+        name += f"_{key}_{value}"
+    return name
 
 if __name__ == '__main__':
     # 设置随机种子
@@ -153,27 +153,45 @@ if __name__ == '__main__':
     print("="*50)
 
     ray.init()
-    tune.run(
+    result = tune.run(
         train_tune,
         config={
-            "lr": tune.grid_search([0.001, 0.01]),
-            # "e_layers": tune.grid_search([3, 4, 5]),
-            # "d_model": tune.grid_search([64, 128, 256]),
-            # "d_ff": tune.grid_search([64, 128, 256]),
+            "lr": tune.grid_search([0.0001]),
+            "e_layers": tune.grid_search([2, 3, 4, 5]),
+            "d_model": tune.grid_search([16, 32, 64, 128]),
+            "d_ff": tune.grid_search([16, 32, 64, 128]),
             # "embed": tune.grid_search(['fixed', 'timeF']),
             # "freq": tune.grid_search(['h', 'd']),
-            # "top_k": tune.grid_search([3]),
+            "top_k": tune.grid_search([3, 4, 5]),
             # "num_kernels": tune.grid_search([3]),
             # "dropout": tune.grid_search([0.1, 0.2, 0.3]),
             # "factor": tune.grid_search([1, 2, 3]),
-            # "n_heads": tune.grid_search([8, 4]),
+            # "n_heads": tune.grid_search([8]),
             # "activation": tune.grid_search(['gelu', 'relu'])
         },
-        resources_per_trial={"cpu": 1, "gpu": 1},
-        num_samples=1,
-        scheduler=ASHAScheduler(metric="mean_accuracy", mode="max"),
-        progress_reporter=CLIReporter(metric_columns=["mean_accuracy", "training_iteration"]),
+        search_alg=OptunaSearch(),
+        resources_per_trial={"cpu": 8, "gpu": 1},
+        num_samples=2,
+        scheduler=ASHAScheduler(metric="accuracy", mode="max", grace_period=args.num_epoch//10),
+        progress_reporter=CLIReporter(metric_columns=["accuracy", "training_iteration"]),
         checkpoint_at_end=False,
         storage_path=r"file:///C:/Users/W/Desktop/Time-Series-Library/logs/HAR-B",
-        trial_dirname_creator=lambda trial: str(trial),
+        trial_name_creator=custom_trial_name_creator,
+        trial_dirname_creator=custom_trial_name_creator,
     )
+     # 找出最佳实验
+    best_trial = result.get_best_trial("accuracy", "max", "last")
+    # 打印最佳实验的参数配置
+    print("Best trial config: {}".format(best_trial.config))
+    print("Best trial final validation loss: {}".format(
+        best_trial.last_result["loss"]))
+    print("Best trial final validation accuracy: {}".format(
+        best_trial.last_result["accuracy"]))
+
+
+"""
+HAR-B:PatchTST-Bacth_32s
+Best trial config: {'lr': 0.0001, 'e_layers': 6, 'd_model': 128, 'd_ff': 512}
+Best trial final validation loss: 0.011632021445095023
+Best trial final validation accuracy: 0.8912489379779099
+"""

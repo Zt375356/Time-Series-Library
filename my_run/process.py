@@ -7,7 +7,8 @@ from tqdm import tqdm
 import time
 import datetime
 import torch.utils.tensorboard as tensorboard
-
+from ray import train, tune
+from ray.tune import Callback
 
 class LossCalculator:
     def __init__(self, model, latent_loss_weight=0.25):
@@ -215,7 +216,7 @@ class Trainer():
         # self.writer.add_scalar('F1/train', total_f1 / (idx + 1), global_step=epoch)
 
 
-        return loss_sum / (idx + 1), time.perf_counter() - t0
+        return loss_sum / (idx + 1), metric[self.metric], time.perf_counter() - t0
 
     def eval_model_vqvae(self):
         self.model.eval()
@@ -285,15 +286,19 @@ class RayTrainer(Trainer):
 
 
     def train(self):
-        pbar = tqdm(range(self.num_epoch), 
-            desc="训练进度",
-            disable=False,
-            ncols=self.num_epoch)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
         
-        for epoch in pbar:
-            loss_epoch, time_cost = self._train_one_epoch(epoch)
+        for epoch in range(self.num_epoch):
+            loss_epoch, acc_epoch, time_cost = self._train_one_epoch(epoch)
+
+            # tune.report()
+            train.report(
+            {
+            "accuracy":acc_epoch,
+            "loss":loss_epoch
+            },  # 这里假设你在训练过程中能计算得到current_accuracy_value这个准确率的值
+            checkpoint=None)
             
         print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
         return self.best_metric, loss_epoch

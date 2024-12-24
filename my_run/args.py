@@ -40,7 +40,7 @@ parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--lr_decay_rate', type=float, default=0.99)
 parser.add_argument('--lr_decay_steps', type=int, default=300)
 parser.add_argument('--weight_decay', type=float, default=1e-5)
-parser.add_argument('--num_epoch', type=int, default=40)
+parser.add_argument('--num_epoch', type=int, default=60)
 parser.add_argument('--eval_per_steps', type=int, default=200)
 
 
