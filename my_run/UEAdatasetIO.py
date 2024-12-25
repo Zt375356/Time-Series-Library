@@ -1,8 +1,10 @@
-from models import TimesNet
 import torch
 import torch.nn as nn
 import numpy as np
-from exp.exp_classification import Exp_Classification
+import sys
+sys.path.append(r'C:\Users\44518\Desktop\Gitlib\Time-Series-Library')
+
+# from exp.exp_classification import Exp_Classification
 from data_provider.data_factory import data_provider
 import argparse
 
@@ -14,6 +16,8 @@ args.dataset_name = 'TEST'
 args.task_name = 'classification'
 args.data = 'UEA'
 args.root_path = './dataset/'
+args.embed = 'timeF'
+args.freq = None
 args.batch_size = 16
 args.seq_len = 100
 args.num_workers = 0
