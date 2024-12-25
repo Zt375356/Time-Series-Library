@@ -86,6 +86,12 @@ def train_wandb():
     for key in wandb.config.keys():
         setattr(args, key, wandb.config[key])
 
+
+    seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = prepare_data(args=args)
+    args.seq_len = seq_len
+    args.enc_in = num_channel
+    args.num_class = num_classes
+
     # 初始化模型    
     print("正在初始化模型...")
     model = TimesNet.Model(args).to(args.device)  # 将模型移动到指定设备
@@ -127,38 +133,35 @@ if __name__ == '__main__':
     seed_everything(seed=2024)
     print("随机种子设置完成!")
     print("="*50)
-    
-    seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = prepare_data(args=args)
-    args.seq_len = seq_len
-    args.enc_in = num_channel
-    args.pred_len = 0 # for classification
-    args.num_class = num_classes
-    args.label_len = 1
 
-    print("="*50)
+    args.pred_len = 0 # for classification
+    args.label_len = 1
 
     # 使用wandb的sweep功能进行超参数调整
     sweep_config = {
         "name": f"{args.model}-{args.dataset_name}-sweep",
-        "method": "grid",
+        "method": "bayes",
         'metric': {
         'goal': 'maximize', 
         'name': 'accuracy'
         },
         "parameters": {
-            "e_layers": {"values": [3, 4, 5]},
-            "d_model": {"values": [32, 64, 128]},
-            "d_ff": {"values": [32, 64, 128]},
-            "embed": {"values": ['fixed', 'timeF']},
-            "top_k": {"values": [3, 4, 5]},
-            "dropout": {"values": [0.1, 0.2, 0.3]},
+            "lr":{"values":[0.01,0.001]},
+            "batch_size":{"values": [16,32,64]},
+            "e_layers": {"values": [3]},
+            "d_model": {"values": [16, 32, 64]},
+            "d_ff": {"values": [16, 32, 64]},
+            # "embed": {"values": ['fixed', 'timeF']},
+            "top_k": {"values": [3]},
+            "dropout": {"values": [0.2]},
         },
         "early_terminate": {
         "type": "hyperband",
+        "min_iter": 2
         }
     }
 
-    sweep_id = wandb.sweep(sweep_config, project=f"{args.model}-{args.dataset_name}")
+    sweep_id = wandb.sweep(sweep_config, project=f"{args.model}-{args.dataset_name}-final")
     wandb.agent(sweep_id, train_wandb)
 
     # # 找出最佳实验

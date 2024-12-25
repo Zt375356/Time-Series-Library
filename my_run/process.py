@@ -320,7 +320,7 @@ class WandBTrainer(Trainer):
             loss_epoch, acc_epoch, time_cost = self._train_one_epoch(epoch)
 
             wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch}) 
-            wandb.watch(self.model, log='all')
+            # wandb.watch(self.model, log='all')
 
                
         print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
