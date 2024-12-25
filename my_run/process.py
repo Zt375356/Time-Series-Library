@@ -190,12 +190,12 @@ class Trainer():
                 metric = self.eval_model_vqvae()
                 
                 if metric[self.metric] >= self.best_metric[self.metric]:
-                    # self.model.eval()
-                    # torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
-                    # print(f"保存最佳模型 (Step {self.step})")
-                    # self.result_file = open(self.save_path + '/result.txt', 'a+')
-                    # print(f'保存模型 Step {self.step}', file=self.result_file)
-                    # self.result_file.close()
+                    self.model.eval()
+                    torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
+                    print(f"保存最佳模型 (Step {self.step})")
+                    self.result_file = open(self.save_path + '/result.txt', 'a+')
+                    print(f'保存模型 Step {self.step}', file=self.result_file)
+                    self.result_file.close()
                     self.best_metric = metric
                 self.model.train()
 
@@ -298,10 +298,16 @@ class WandBTrainer(Trainer):
         for epoch in range(self.num_epoch):
             loss_epoch, metric, time_cost = self._train_one_epoch(epoch)
             acc_epoch, F1_epoch = metric["accuracy"], metric["F1"]
-
-            wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch, "F1": F1_epoch, "best/accuracy":self.best_metric[0]})
+            wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch})
                
         print(f"训练完成! 最佳指标: acc:{self.best_metric[0]:.4f} F1:{self.best_metric[1]:.4f}")
-        return self.best_metric, loss_epoch
 
+        # 添加测试代码
+        self.model.load_state_dict(torch.load(self.save_path + '/model.pkl'))
+        self.model.eval()
+        test_metric, _ = self.eval_model_vqvae()
+        test_acc, test_F1 = test_metric["accuracy"], test_metric["F1"]
+        wandb.log({"test/accuracy": test_acc, "test/F1": test_F1})
+        print(f"测试完成! 测试指标: acc:{test_acc:.4f} F1:{test_F1:.4f}")
         
+        return self.best_metric, loss_epoch
