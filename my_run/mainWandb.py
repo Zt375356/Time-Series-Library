@@ -1,7 +1,10 @@
+from regex import P
 import torch
 from torch import nn
 from torch.nn import functional as F
 import os
+
+from data_provider.data_factory import data_provider
 os.chdir(r'c:\\Users\\W\\Desktop\\Time-Series-Library')
 import numpy as np
 
@@ -32,53 +35,56 @@ def seed_everything(seed):
 
 
 def prepare_data(args):
+    dataset_names = {
+        'UEA': [
+            "EthanolConcentration",
+            "FaceDetection",
+            "Handwriting",
+            "Heartbeat",
+            "JapaneseVowels",
+            "PEMS-SF",
+            "SelfRegulationSCP1",
+            "SelfRegulationSCP2",
+            "SpokenArabicDigits",
+            "UWaveGestureLibrary"
+        ],
+        'Private': [
+            'AW-A',
+            'AW-B',
+            'Gesture-A',
+            'Gesture-B',
+            'HAR-A',
+            'HAR-B',
+            'HAR-C'
+        ]
+    }
 
-    
-    # 加载数据集
-    print("正在加载数据集...")
-    seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = dataset_loader.load_data(args)
-
-    print(f"数据集名称: {args.dataset_name}")
-    print(f"数据形状: ({seq_len},{num_channel})")
-
-    print("数据集加载完成!")
-    return seq_len, num_classes, num_channel, train_loader, val_loader, test_loader
-
-
-def main():
-
-    # 初始化模型
-    print("正在初始化模型...")
-    model = PatchTST.Model(args).to(args.device)  # 将模型移动到指定设备
-    print(f"模型参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-
-    print("模型初始化完成!")
-    print("="*50)
-
-    # 初始化训练器
-    print("正在初始化训练器...")
-    sys.path.append(r"c:\\Users\\W\\Desktop\\Time-Series-Library\\my_run")  # 将高一级目录添加到模块搜索路径
-    trainer = Trainer(args, model, train_loader, test_loader, verbose=True)
-    print("训练器初始化完成!")
-    print("="*50)
-
-    # 设置训练模式
-    if args.is_training:
-        # 开始训练
-        print("开始训练模型...")
-        best_metric,current_loss = trainer.train()
-        
+    dataset_type = None
+    for dataset_type, names in dataset_names.items():
+        if args.dataset_name in names:
+            break
     else:
-        # 加载最佳模型
-        print("正在加载最佳模型...")
-        model.load_state_dict(torch.load(args.save_path + '/model.pkl'))
-        print("最佳模型加载完成!")
-        print("="*50)
+        raise ValueError(f"Dataset name {args.dataset_name} not found in the dataset names.")
 
-        # 开始测试
-        print("开始测试模型...")
-        trainer.eval_model_vqvae()
-        print("模型测试完成!")
+    if dataset_type == 'UEA':
+        print(f"正在加载UEA数据集:{args.dataset_name}...")
+        args.data = 'UEA'
+        args.root_path = f'./dataset/{args.dataset_name}'
+        train_data_set, train_loader = data_provider(args, flag='TRAIN')
+        test_data_set, test_loader = data_provider(args, flag='TEST')
+        seq_len, num_channel = train_data_set[0][0].size()
+        num_classes = len(set(item[1] for item in train_data_set))
+        print(f"数据集名称: {args.dataset_name}")
+        print(f"数据形状: ({seq_len},{num_channel})")
+        print("数据集加载完成!")
+        return seq_len, num_classes, num_channel, train_loader, test_loader, test_loader
+    elif dataset_type == 'Private':
+        print(f"正在加载Private数据集:{args.dataset_name}...")
+        seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = dataset_loader.load_data(args)
+        print(f"数据集名称: {args.dataset_name}")
+        print(f"数据形状: ({seq_len},{num_channel})")
+        print("数据集加载完成!")
+        return seq_len, num_classes, num_channel, train_loader, val_loader, test_loader
 
 
 def train_wandb():

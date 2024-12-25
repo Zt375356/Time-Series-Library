@@ -92,6 +92,7 @@ class LossCalculator:
         loss = recon_loss + self.latent_loss_weight * latent_loss
         return loss
 
+
 class Trainer():
     def __init__(self, args, model, train_loader, test_loader, verbose=False):
         self.args = args
@@ -111,16 +112,12 @@ class Trainer():
         self.num_epoch = args.num_epoch
         self.eval_per_steps = args.eval_per_steps
         self.save_path = args.save_path
-        # if self.num_epoch:
-        #     self.result_file = open(self.save_path + '/result.txt', 'w')
-        #     self.result_file.close()
 
         self.step = 0
-        self.best_metric = -1e9
-        self.metric = 'acc'
+        self.best_metric = [-1e9,-1e9] #acc,F1
+        self.metric = 'acc' #用于评估的指标
         log_dir = os.path.join("./logs",self.args.dataset_name)
         log_dir = os.path.join(log_dir,datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-        # self.writer = tensorboard.SummaryWriter(log_dir=log_dir)  # 初始化tensorboard writer
         print(log_dir)
 
     def train(self):
@@ -141,8 +138,7 @@ class Trainer():
             print(log_msg, file=self.result_file)
             self.result_file.close()
             
-        print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
-        # self.writer.close()
+        print(f"训练完成! 最佳指标: acc:{self.best_metric[0]:.4f} F1:{self.best_metric[1]:.4f}")
         return self.best_metric, loss_epoch
     
     def _train_one_epoch(self, epoch):
@@ -192,33 +188,18 @@ class Trainer():
             #     self.scheduler.step()
             if self.step % self.eval_per_steps == 0:
                 metric = self.eval_model_vqvae()
-                # print(f"Step {self.step}: {metric}")
-                # self.result_file = open(self.save_path + '/result.txt', 'a+')
-                # print(f'Step {self.step}:', file=self.result_file)
-                # print(metric, file=self.result_file)
-                # self.result_file.close()
-
-                # # 使用tensorboard记录val过程中的损失、准确率和F1分数
-                # self.writer.add_scalar('Accuracy/val', metric['acc'], global_step=self.step)
-                # self.writer.add_scalar('F1/val', metric['F1'], global_step=self.step)
                 
-                if metric[self.metric] >= self.best_metric:
-                    self.model.eval()
+                if metric[self.metric] >= self.best_metric[self.metric]:
+                    # self.model.eval()
                     # torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
                     # print(f"保存最佳模型 (Step {self.step})")
                     # self.result_file = open(self.save_path + '/result.txt', 'a+')
                     # print(f'保存模型 Step {self.step}', file=self.result_file)
                     # self.result_file.close()
-                    self.best_metric = metric[self.metric]
+                    self.best_metric = metric
                 self.model.train()
 
-        # 使用tensorboard记录train过程中的损失、准确率和F1分数 
-        # self.writer.add_scalar('Loss/train', loss_sum / (idx + 1), global_step=epoch)
-        # self.writer.add_scalar('Accuracy/train', total_correct / num_samples_processed, global_step=epoch)
-        # self.writer.add_scalar('F1/train', total_f1 / (idx + 1), global_step=epoch)
-
-
-        return loss_sum / (idx + 1), metric[self.metric], time.perf_counter() - t0
+        return loss_sum / (idx + 1), metric, time.perf_counter() - t0
 
     def eval_model_vqvae(self):
         self.model.eval()
@@ -277,7 +258,7 @@ class Trainer():
                 metrics = {'acc': total_correct / num_samples_processed, 'F1': total_f1 / (idx + 1)}
             else:
                 print("Warning: No valid samples were processed. Returning default metrics values.")
-                metrics = {'acc': 0.0, 'F1': 0.0}  # 如果没有处理有效样本，返回默认的评估指标值
+                metrics = {'accuracy': 0.0, 'F1': 0.0}  # 如果没有处理有效样本，返回默认的评估指标值
 
         return metrics
 
@@ -286,7 +267,6 @@ class RayTrainer(Trainer):
     def __init__(self, args, model, train_loader, test_loader, verbose=False):
         args.epoch = False
         super().__init__(args, model, train_loader, test_loader, verbose=False)
-
 
     def train(self):
 
@@ -313,17 +293,15 @@ class WandBTrainer(Trainer):
         super().__init__(args, model, train_loader, test_loader, verbose=False)
         
     def train(self):
-
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
         
         for epoch in range(self.num_epoch):
-            loss_epoch, acc_epoch, time_cost = self._train_one_epoch(epoch)
+            loss_epoch, metric, time_cost = self._train_one_epoch(epoch)
+            acc_epoch, F1_epoch = metric["accuracy"], metric["F1"]
 
-            wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch}) 
-            # wandb.watch(self.model, log='all')
-
+            wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch, "F1": F1_epoch, "best/accuracy":self.best_metric[0]})
                
-        print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
+        print(f"训练完成! 最佳指标: acc:{self.best_metric[0]:.4f} F1:{self.best_metric[1]:.4f}")
         return self.best_metric, loss_epoch
 
         

@@ -5,7 +5,6 @@ import json
 parser = argparse.ArgumentParser()
 
 # 数据集和数据加载器参数
-
 parser.add_argument('--task_name', type=str, default='classification')
 parser.add_argument('--is_training', type=int, default=1)
 parser.add_argument('--model', type=str, default='TimesNet')
