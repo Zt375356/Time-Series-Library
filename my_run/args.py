@@ -13,7 +13,7 @@ parser.add_argument('--itr', type=int, default=1)
 
 
 parser.add_argument('--save_path', type=str, default='./log')
-parser.add_argument('--dataset_name', type=str, default='FaceDetection', choices=['AW-A', 'AW-B', 'Gesture-A', 'Gesture-B', 'HAR-A', 'HAR-B', 'HAR-C'])
+parser.add_argument('--dataset_name', type=str, default='SpokenArabicDigits', choices=['AW-A', 'AW-B', 'Gesture-A', 'Gesture-B', 'HAR-A', 'HAR-B', 'HAR-C'])
 parser.add_argument('--device', type=str, default='cuda:0')
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--useLeaveOneOutCrossValidation', type=bool, default=0)

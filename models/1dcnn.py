@@ -6,41 +6,47 @@ import torch.nn.functional as F
 
 
 class ConvNetModel(nn.Module):
-    def __init__(self, input_shape, num_classes):
+    def __init__(self, args):
         super(ConvNetModel, self).__init__()
-        self.input_shape = input_shape
-        self.num_classes = num_classes
+
+        self.args = args
+        self.num_channel = args.enc_in
+        self.d_model = args.d_model
+        self.num_class = args.num_class
+        self.mlp_dim = args.d_ff
+        self.dropout = args.dropout
 
         # 第一组Conv1D和激活函数
-        self.conv1 = nn.Conv1d(in_channels=input_shape[0], out_channels=100, kernel_size=10, stride=1)
+        self.conv1 = nn.Conv1d(in_channels=self.num_channel, out_channels=self.d_model, kernel_size=10, stride=1)
         self.relu1 = nn.ReLU()
 
         # 第二组Conv1D和激活函数
-        self.conv2 = nn.Conv1d(in_channels=100, out_channels=100, kernel_size=10, stride=1)
+        self.conv2 = nn.Conv1d(in_channels=self.d_model, out_channels=self.d_model, kernel_size=10, stride=1)
         self.relu2 = nn.ReLU()
 
         # 最大池化层
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=3)
 
         # 第三组Conv1D和激活函数
-        self.conv3 = nn.Conv1d(in_channels=100, out_channels=160, kernel_size=10, stride=1)
+        self.conv3 = nn.Conv1d(in_channels=self.d_model, out_channels=self.mlp_dim, kernel_size=10, stride=1)
         self.relu3 = nn.ReLU()
 
         # 第四组Conv1D和激活函数
-        self.conv4 = nn.Conv1d(in_channels=160, out_channels=160, kernel_size=10, stride=1)
+        self.conv4 = nn.Conv1d(in_channels=self.mlp_dim, out_channels=self.mlp_dim, kernel_size=10, stride=1)
         self.relu4 = nn.ReLU()
 
         # 全局平均池化层
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
 
         # Dropout层
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(self.dropout)
 
         # 全连接层
-        self.fc = nn.Linear(160, num_classes)
+        self.fc = nn.Linear(self.mlp_dim, self.num_class)
 
-    def forward(self, x):
-        x = x.permute(0,2,1)
+
+    def classification(self, x, x_mark_enc):
+
         # 第一组卷积和激活函数
         x = self.relu1(self.conv1(x))
 
@@ -68,3 +74,9 @@ class ConvNetModel(nn.Module):
         # 全连接层
         x = self.fc(x)
         return x
+
+
+    def forward(self, x, x_mark_enc):
+        out = self.classification(x,x_mark_enc)
+        return out
+      

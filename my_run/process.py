@@ -221,15 +221,15 @@ class Trainer():
                 self.model.train()
 
         # for small UEA dataset, eval in each epoch end
-            metric = self.eval_model_vqvae()
-            if metric[self.val_metric] >= self.best_metric[self.val_metric]:
-                self.model.eval()
-                torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
-                print(f"保存最佳模型 (Step {self.step})")
-                self.result_file = open(self.save_path + '/result.txt', 'a+')
-                print(f'保存模型 Step {self.step}', file=self.result_file)
-                self.result_file.close()
-                self.best_metric = metric
+        metric = self.eval_model_vqvae()
+        if metric[self.val_metric] >= self.best_metric[self.val_metric]:
+            self.model.eval()
+            torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
+            print(f"保存最佳模型 (Step {self.step})")
+            self.result_file = open(self.save_path + '/result.txt', 'a+')
+            print(f'保存模型 Step {self.step}', file=self.result_file)
+            self.result_file.close()
+            self.best_metric = metric
 
         avg_loss = total_loss / (idx + 1)
         train_avg_accuracy = total_correct / total_samples
