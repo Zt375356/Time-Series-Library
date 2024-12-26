@@ -12,6 +12,31 @@ from ray.tune import Callback
 
 import wandb
 
+dataset_names = {
+        'UEA': [
+            "EthanolConcentration",
+            "FaceDetection",
+            "Handwriting",
+            "Heartbeat",
+            "JapaneseVowels",
+            "PEMS-SF",
+            "SelfRegulationSCP1",
+            "SelfRegulationSCP2",
+            "SpokenArabicDigits",
+            "UWaveGestureLibrary"
+        ],
+        'Private': [
+            'AW-A',
+            'AW-B',
+            'Gesture-A',
+            'Gesture-B',
+            'HAR-A',
+            'HAR-B',
+            'HAR-C'
+        ]
+    }
+
+
 class LossCalculator:
     def __init__(self, model, latent_loss_weight=0.25):
         self.model = model
@@ -52,7 +77,7 @@ class LossCalculator:
                 return None
 
         # 通过模型获取输出
-        out = self.model(seqs, None, None, None)
+        out = self.model.classification(seqs, x_mark_enc=None)
         # 检查模型输出out是否是张量类型
         if not isinstance(out, torch.Tensor):
             print("Error: Model output is not a tensor.")
@@ -82,7 +107,7 @@ class LossCalculator:
             print(f"Error occurred while calculating cross-entropy loss: {str(e)}")
             return None
 
-        return loss
+        return loss, out
     
     def compute2(self, batch):
         seqs = batch
@@ -114,8 +139,8 @@ class Trainer():
         self.save_path = args.save_path
 
         self.step = 0
-        self.best_metric = [-1e9,-1e9] #acc,F1
-        self.metric = 'acc' #用于评估的指标
+        self.best_metric = {'accuracy':-1e9,'F1':-1e9} #acc,F1
+        self.val_metric = 'accuracy' #用于评估的指标
         log_dir = os.path.join("./logs",self.args.dataset_name)
         log_dir = os.path.join(log_dir,datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
         print(log_dir)
@@ -138,7 +163,7 @@ class Trainer():
             print(log_msg, file=self.result_file)
             self.result_file.close()
             
-        print(f"训练完成! 最佳指标: acc:{self.best_metric[0]:.4f} F1:{self.best_metric[1]:.4f}")
+        print(f"训练完成! 最佳指标: acc:{self.best_metric['accuracy']:.4f} F1:{self.best_metric['F1']:.4f}")
         return self.best_metric, loss_epoch
     
     def _train_one_epoch(self, epoch):
@@ -150,30 +175,27 @@ class Trainer():
                    disable=not self.verbose,
                    ncols=self.num_epoch)
 
-        loss_sum = 0
+        total_loss = 0
         total_correct = 0
         total_f1 = 0
-        num_samples_processed = 0  # 用于记录已处理的样本总数
+        total_samples = 0
 
         for idx, batch in enumerate(pbar):
             self.optimizer.zero_grad()
             data = [tensor.to(self.device) for tensor in batch]
-            loss = self.cr.compute(data)
-            loss_sum += loss.item()
-
+            data = data[:2]
+            loss, output = self.cr.compute(data)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+            # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5)
             self.optimizer.step()
 
             pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
 
-            # 计算训练过程中的准确率和F1值
-            output = self.model(data[0], None, None, None)
             pred = output.argmax(dim=1, keepdim=True)
             target = data[1].view(pred.shape)
             correct = pred.eq(target).sum().item()
             total_correct += correct
-            num_samples_processed += pred.numel()
+            total_samples += pred.numel()
 
             pred_labels = pred.cpu().numpy().flatten()
             target_labels = target.cpu().numpy().flatten()
@@ -183,13 +205,12 @@ class Trainer():
             except:
                 pass
 
+            total_loss += loss.item()
             self.step += 1
-            # if self.step % self.lr_decay_steps == 0:
-            #     self.scheduler.step()
-            if self.step % self.eval_per_steps == 0:
+
+            if self.args.data == "Private" and self.step % self.eval_per_steps == 0:
                 metric = self.eval_model_vqvae()
-                
-                if metric[self.metric] >= self.best_metric[self.metric]:
+                if metric[self.val_metric] >= self.best_metric[self.val_metric]:
                     self.model.eval()
                     torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
                     print(f"保存最佳模型 (Step {self.step})")
@@ -199,7 +220,22 @@ class Trainer():
                     self.best_metric = metric
                 self.model.train()
 
-        return loss_sum / (idx + 1), metric, time.perf_counter() - t0
+        # for small UEA dataset, eval in each epoch end
+            metric = self.eval_model_vqvae()
+            if metric[self.val_metric] >= self.best_metric[self.val_metric]:
+                self.model.eval()
+                torch.save(self.model.state_dict(), self.save_path + '/model.pkl')
+                print(f"保存最佳模型 (Step {self.step})")
+                self.result_file = open(self.save_path + '/result.txt', 'a+')
+                print(f'保存模型 Step {self.step}', file=self.result_file)
+                self.result_file.close()
+                self.best_metric = metric
+
+        avg_loss = total_loss / (idx + 1)
+        train_avg_accuracy = total_correct / total_samples
+        train_avg_f1 = total_f1 / (idx + 1)
+
+        return avg_loss, {"eval/accuracy": metric['accuracy'], "eval/F1": metric['F1']}, time.perf_counter() - t0
 
     def eval_model_vqvae(self):
         self.model.eval()
@@ -215,23 +251,17 @@ class Trainer():
 
             for idx, batch in enumerate(pbar):
                 data = [tensor.to(self.device) for tensor in batch]
-                if len(data)!= 2:
-                    print(f"Warning: Batch should contain two elements (sequences and targets), but got {len(data)}. Skipping this batch.")
-                    continue  # 如果批次数据不符合要求，跳过当前批次
 
-                seqs, target = data
-                if not isinstance(seqs, torch.Tensor) or not isinstance(target, torch.Tensor):
-                    print("Error: Input sequences or target labels are not in the correct tensor format. Skipping this batch.")
-                    continue  # 如果序列或目标不是张量类型，跳过当前批次
+                seqs, target = data[:2]
 
-                output = self.model(seqs, None, None, None)
+                output = self.model.classification(seqs, x_mark_enc=None)
                 if output.dim() < 2:
                     print("Error: Model output should have at least two dimensions. Skipping this batch.")
                     continue  # 如果模型输出维度不符合要求，跳过当前批次
 
                 pred = output.argmax(dim=1, keepdim=True)
                 # 确保pred和target的形状在比较时是兼容的
-                if pred.shape!= target.shape:
+                if pred.shape != target.shape:
                     target = target.view(pred.shape)
 
                 correct = pred.eq(target).sum().item()
@@ -241,7 +271,7 @@ class Trainer():
                 # 计算F1Score，确保数据类型转换和形状适配正确
                 pred_labels = pred.cpu().numpy().flatten()
                 target_labels = target.cpu().numpy().flatten()
-                if len(pred_labels)!= len(target_labels):
+                if len(pred_labels) != len(target_labels):
                     print("Error: Predicted labels and target labels have different lengths. Skipping F1 score calculation for this batch.")
                     continue  # 如果预测标签和目标标签长度不一致，跳过当前批次F1分数计算
 
@@ -255,12 +285,12 @@ class Trainer():
                 pbar.set_postfix({"Accuracy": f"{total_correct / num_samples_processed:.4f}", "F1 Score": f"{total_f1 / (idx + 1):.4f}"})
 
             if num_samples_processed > 0:  # 避免除数为0，只有当有数据参与循环时才进行平均计算
-                metrics = {'acc': total_correct / num_samples_processed, 'F1': total_f1 / (idx + 1)}
+                metric = {'accuracy': total_correct / num_samples_processed, 'F1': total_f1 / (idx + 1)}
             else:
                 print("Warning: No valid samples were processed. Returning default metrics values.")
-                metrics = {'accuracy': 0.0, 'F1': 0.0}  # 如果没有处理有效样本，返回默认的评估指标值
+                metric = {'accuracy': 0.0, 'F1': 0.0}  # 如果没有处理有效样本，返回默认的评估指标值
 
-        return metrics
+        return metric
 
 
 class RayTrainer(Trainer):
@@ -283,7 +313,7 @@ class RayTrainer(Trainer):
             },  # 这里假设你在训练过程中能计算得到current_accuracy_value这个准确率的值
             checkpoint=None)
             
-        print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
+        # print(f"训练完成! 最佳指标: {self.best_metric:.4f}")
         return self.best_metric, loss_epoch
     
 
@@ -297,17 +327,23 @@ class WandBTrainer(Trainer):
         
         for epoch in range(self.num_epoch):
             loss_epoch, metric, time_cost = self._train_one_epoch(epoch)
-            acc_epoch, F1_epoch = metric["accuracy"], metric["F1"]
-            wandb.log({"epoch": epoch, "loss": loss_epoch, "accuracy": acc_epoch})
+            acc_epoch, F1_epoch = metric["eval/accuracy"], metric["eval/F1"]
+            wandb.log({"train/loss": loss_epoch, "eval/accuracy": acc_epoch,"eval/F1":F1_epoch})
                
-        print(f"训练完成! 最佳指标: acc:{self.best_metric[0]:.4f} F1:{self.best_metric[1]:.4f}")
+        print(f"训练完成! 最佳指标: acc:{self.best_metric['accuracy']:.4f} F1:{self.best_metric['F1']:.4f}")
 
         # 添加测试代码
         self.model.load_state_dict(torch.load(self.save_path + '/model.pkl'))
         self.model.eval()
-        test_metric, _ = self.eval_model_vqvae()
-        test_acc, test_F1 = test_metric["accuracy"], test_metric["F1"]
-        wandb.log({"test/accuracy": test_acc, "test/F1": test_F1})
-        print(f"测试完成! 测试指标: acc:{test_acc:.4f} F1:{test_F1:.4f}")
-        
+        test_accs = []
+        test_F1s = []
+        for _ in range(3):
+            test_metric = self.eval_model_vqvae()
+            test_acc, test_F1 = test_metric["accuracy"], test_metric["F1"]
+            test_accs.append(test_acc)
+            test_F1s.append(test_F1)
+        avg_test_acc = sum(test_accs) / len(test_accs)
+        avg_test_F1 = sum(test_F1s) / len(test_F1s)
+        wandb.log({"test/accuracy": avg_test_acc, "test/F1": avg_test_F1})
+        print(f"测试完成! 测试指标: acc:{avg_test_acc:.4f} F1:{avg_test_F1:.4f}")
         return self.best_metric, loss_epoch

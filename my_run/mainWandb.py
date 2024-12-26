@@ -4,7 +4,6 @@ from torch import nn
 from torch.nn import functional as F
 import os
 
-from data_provider.data_factory import data_provider
 os.chdir(r'c:\\Users\\W\\Desktop\\Time-Series-Library')
 import numpy as np
 
@@ -16,10 +15,12 @@ import random
 
 import sys
 sys.path.append(r"c:\\Users\\W\\Desktop\\Time-Series-Library")  # 将高一级目录添加到模块搜索路径
+from data_provider.data_factory import data_provider
 from process import Trainer,RayTrainer,WandBTrainer
-from models import TimesNet, PatchTST 
+import models
 
 import wandb
+
 
 def seed_everything(seed):
 
@@ -35,6 +36,12 @@ def seed_everything(seed):
 
 
 def prepare_data(args):
+
+    """
+    UEA:[batch_size,seq_len,num_channel]
+    Private:[batch_size,num_channel,seq_len]
+    
+    """
     dataset_names = {
         'UEA': [
             "EthanolConcentration",
@@ -74,12 +81,14 @@ def prepare_data(args):
         test_data_set, test_loader = data_provider(args, flag='TEST')
         seq_len, num_channel = train_data_set[0][0].size()
         num_classes = len(set(item[1] for item in train_data_set))
+        dataset_length = len(train_data_set)
         print(f"数据集名称: {args.dataset_name}")
-        print(f"数据形状: ({seq_len},{num_channel})")
+        print(f"数据形状: ({dataset_length},{seq_len},{num_channel})")
         print("数据集加载完成!")
         return seq_len, num_classes, num_channel, train_loader, test_loader, test_loader
     elif dataset_type == 'Private':
         print(f"正在加载Private数据集:{args.dataset_name}...")
+        args.data = 'Private'
         seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = dataset_loader.load_data(args)
         print(f"数据集名称: {args.dataset_name}")
         print(f"数据形状: ({seq_len},{num_channel})")
@@ -88,19 +97,18 @@ def prepare_data(args):
 
 
 def train_wandb():
-    wandb.init(project="HAR-B", entity=f"{args.model}-{args.dataset_name}")
+    wandb.init(project=f"{args.dataset_name}", entity=f"{args.model}-{args.dataset_name}")
     for key in wandb.config.keys():
         setattr(args, key, wandb.config[key])
 
-
-    seq_len, num_classes, num_channel, train_loader, val_loader, test_loader = prepare_data(args=args)
+    seq_len, num_class, num_channel, train_loader, val_loader, test_loader = prepare_data(args=args)
     args.seq_len = seq_len
     args.enc_in = num_channel
-    args.num_class = num_classes
+    args.num_class = num_class
 
     # 初始化模型    
     print("正在初始化模型...")
-    model = TimesNet.Model(args).to(args.device)  # 将模型移动到指定设备
+    model = models.TSTformer(args).to(args.device)  # 将模型移动到指定设备
     print(f"模型参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
     print("模型初始化完成!")
@@ -149,33 +157,23 @@ if __name__ == '__main__':
         "method": "bayes",
         'metric': {
         'goal': 'maximize', 
-        'name': 'accuracy'
+        'name': 'test/accuracy'
         },
         "parameters": {
-            "lr":{"values":[0.01,0.001]},
-            "batch_size":{"values": [16,32,64]},
+            "lr":{"min": 0.0001, "max": 0.001},
+            "batch_size":{"values": [16,32]},
             "e_layers": {"values": [3]},
-            "d_model": {"values": [16, 32, 64]},
-            "d_ff": {"values": [16, 32, 64]},
+            "d_model": {"values": [16, 32]},
+            "d_ff": {"values": [32, 64,128]},
             # "embed": {"values": ['fixed', 'timeF']},
-            "top_k": {"values": [3]},
-            "dropout": {"values": [0.2]},
+            # "top_k": {"values": [3]},
+            # "dropout": {"values": [0.1,0.2]},
         },
         "early_terminate": {
         "type": "hyperband",
-        "min_iter": 2
+        "min_iter": 3
         }
     }
 
-    sweep_id = wandb.sweep(sweep_config, project=f"{args.model}-{args.dataset_name}-final")
+    sweep_id = wandb.sweep(sweep_config, project=f"{args.model}-{args.dataset_name}")
     wandb.agent(sweep_id, train_wandb)
-
-    # # 找出最佳实验
-    # best_run = wandb.Api().runs(f"{args.model}-{args.dataset_name}", filters={"sweep": {"$in": [sweep_id]}}).best("accuracy")
-    # # 打印最佳实验的参数配置
-    # print("Best run config: {}".format(best_run.config))
-    # print("Best run final validation loss: {}".format(
-    #     best_run.summary["loss"]))
-    # print("Best run final validation accuracy: {}".format(
-    #     best_run.summary["accuracy"]))
-

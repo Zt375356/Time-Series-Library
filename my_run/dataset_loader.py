@@ -466,8 +466,8 @@ def count_calls(func):
 
 @ count_calls
 def Gesture_dataset_loader_A(call_count=0, batch_size=128, sequence_len=250, random_seed=42, LOSO=True):
-    train_path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\Gesture-A\training"
-    test_path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\Gesture-A\testing"
+    train_path = r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\training"
+    test_path = r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\testing"
 
     "16名被试"
 
@@ -573,15 +573,15 @@ def Gesture_dataset_loader_A(call_count=0, batch_size=128, sequence_len=250, ran
 
         train_id = [uid for uid in useful_id if uid != test_id]
 
-        train_data_path = ["C:\\Users\\admin\\Desktop\\emergency gesture re\\开源数据集\\Gesture-A\\training\\user_" + str(uid) for uid in train_id]
-        test_data_path = ["C:\\Users\\admin\\Desktop\\emergency gesture re\\开源数据集\\Gesture-A\\training\\user_" + test_id]
+        train_data_path = [r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\training\\user_" + str(uid) for uid in train_id]
+        test_data_path = [r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\testing\\user_" + test_id]
 
         train_id_int = [int(id) for id in train_id]
         test_id_int = [int(test_id)]
         print(f"选择被试id：{int(test_id)}")
-        train_label_path = ["C:\\Users\\admin\\Desktop\\emergency gesture re\\开源数据集\\Gesture-A\\training\\Label\\gestureNames_"
+        train_label_path = [r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\training\\Label\\gestureNames_"
                      + str(id)+".csv" for id in train_id_int]
-        test_label_path = ["C:\\Users\\admin\\Desktop\\emergency gesture re\\开源数据集\\Gesture-A\\training\\Label\\gestureNames_"
+        test_label_path = [r"C:\Users\W\Desktop\导入\数据集\\Gesture-A\\testing\\Label\\gestureNames_"
                      + str(id)+".csv" for id in test_id_int]
 
         # 训练数据部分
@@ -1006,9 +1006,9 @@ def AirWrite_dataset_loader(test_numbers=0, batch_size=128, sequence_len=155, id
     return(batch_size,sequence_len,6)
     """
     if id == 1:
-        path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\Subject_wise_data3"
+        path = r"C:\Users\W\Desktop\导入\数据集\Subject_wise_data3"
     elif id == 2:
-        path = r"C:\Users\admin\Desktop\emergency gesture re\开源数据集\Recorded_preprocessed_data"
+        path = r"C:\Users\W\Desktop\导入\数据集\Recorded_preprocessed_data"
 
     if LOSO:
         numbers = [int(re.search(r'\d+', filename).group()) for filename in os.listdir(path) if

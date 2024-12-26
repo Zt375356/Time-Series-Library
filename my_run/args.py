@@ -7,16 +7,18 @@ parser = argparse.ArgumentParser()
 # 数据集和数据加载器参数
 parser.add_argument('--task_name', type=str, default='classification')
 parser.add_argument('--is_training', type=int, default=1)
-parser.add_argument('--model', type=str, default='TimesNet')
+parser.add_argument('--model', type=str, default='TSTformer')
 parser.add_argument('--des', type=str, default='Exp')
 parser.add_argument('--itr', type=int, default=1)
 
 
 parser.add_argument('--save_path', type=str, default='./log')
-parser.add_argument('--dataset_name', type=str, default='HAR-B', choices=['AW-A', 'AW-B', 'Gesture-A', 'Gesture-B', 'HAR-A', 'HAR-B', 'HAR-C'])
+parser.add_argument('--dataset_name', type=str, default='FaceDetection', choices=['AW-A', 'AW-B', 'Gesture-A', 'Gesture-B', 'HAR-A', 'HAR-B', 'HAR-C'])
 parser.add_argument('--device', type=str, default='cuda:0')
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--useLeaveOneOutCrossValidation', type=bool, default=0)
+parser.add_argument('--num_workers', type=int, default=0)
+parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")
 
 
 # model args
@@ -39,8 +41,8 @@ parser.add_argument('--lr', type=float, default=0.001)
 parser.add_argument('--lr_decay_rate', type=float, default=0.99)
 parser.add_argument('--lr_decay_steps', type=int, default=300)
 parser.add_argument('--weight_decay', type=float, default=1e-5)
-parser.add_argument('--num_epoch', type=int, default=60)
-parser.add_argument('--eval_per_steps', type=int, default=200)
+parser.add_argument('--num_epoch', type=int, default=100)
+parser.add_argument('--eval_per_steps', type=int, default=30)
 
 
 

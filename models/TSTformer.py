@@ -2,19 +2,20 @@ import math
 import torch
 import torch.nn as nn
 
+
 class TSTformer(nn.Module):
     def __init__(self, args):
         super(TSTformer, self).__init__()
 
         self.args = args
-        self.channel_num = args.channel_num
+        self.num_channel = args.enc_in
         self.d_model = args.d_model
-        self.num_classes = args.num_classes
+        self.num_class = args.num_class
         self.mlp_dim = args.d_ff
         self.e_layers = args.e_layers
         self.device = args.device
 
-        self.fc1 = nn.Linear(self.channel_num, self.d_model)
+        self.fc1 = nn.Linear(self.num_channel, self.d_model)
 
         # Transformer encoder
         self.encoder_layer = nn.TransformerEncoderLayer(
@@ -24,7 +25,7 @@ class TSTformer(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=self.e_layers)
 
         # Classifier head
-        self.classifier = nn.Linear(self.d_model, self.num_classes)
+        self.classifier = nn.Linear(self.d_model, self.num_class)
 
     def generate_positional_encoding(self, d_model, max_len):
         """
@@ -38,7 +39,30 @@ class TSTformer(nn.Module):
         pe = pe.unsqueeze(0).transpose(0, 1)
         return pe
 
-    def forward(self, x):
+
+    def classification(self, x, x_mark_enc):
+        bs = x.shape[0]
+        # x = x.permute(0,2,1)
+        # Project input to d_model dimension
+        x = self.fc1(x)
+
+        # Generate and add positional encoding
+        poscode = self.generate_positional_encoding(self.d_model, x.size(1)).to(self.device)
+        x = x + poscode[:bs, :, :]
+
+        # Pass through transformer encoder
+        x = self.transformer_encoder(x)
+
+        # Pooling or global aggregation method (e.g., mean pooling)
+        x = torch.mean(x, dim=1)
+
+        # Classification head
+        out = self.classifier(x)
+
+        return out
+    
+
+    def forward(self, x, x_mark_enc):
         bs = x.shape[0]
         x = x.permute(0,2,1)
         # Project input to d_model dimension
